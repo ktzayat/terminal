@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>_</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: #000;
+  font-family: 'Share Tech Mono', monospace;
+  height: 100vh; width: 100vw;
+  overflow: hidden;
+  position: relative;
+}
+
+#matrix { position:fixed; inset:0; z-index:0; opacity:0.18; }
+
+#crt {
+  position:fixed; inset:0; z-index:50; pointer-events:none;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px);
+}
+#vignette {
+  position:fixed; inset:0; z-index:51; pointer-events:none;
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.9) 100%);
+}
+#gf { position:fixed; inset:0; z-index:200; pointer-events:none; opacity:0; }
+
+#term {
+  position:fixed; inset:0; z-index:10;
+  display:flex; flex-direction:column; justify-content:flex-end;
+  padding: 10vh 8vw 8vh;
+}
+
+.ln {
+  font-size: clamp(13px,1.8vw,17px);
+  line-height: 1.95;
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.08s, transform 0.08s;
+}
+.ln.v { opacity:1; transform:none; }
+
+.n  { color:#001800; font-size:10px; letter-spacing:4px; }
+.s  { color:#0d3d0d; font-size:11px; }
+.w  { color:#2a7a2a; }
+.m  { color:#48c848; }
+.h  { color:#a8ffa8; font-size:clamp(15px,2vw,19px); }
+.g  {
+  color:#70c870;
+  text-shadow: 2px 0 0 rgba(255,0,80,0.5), -2px 0 0 rgba(0,200,255,0.5);
+  animation: glitchTxt 0.15s steps(1) infinite;
+}
+@keyframes glitchTxt {
+  0%,100%{ text-shadow:2px 0 0 rgba(255,0,80,0.5),-2px 0 0 rgba(0,200,255,0.5); }
+  50%{ text-shadow:-3px 0 0 rgba(255,0,80,0.6),3px 0 0 rgba(0,200,255,0.6); letter-spacing:1px; }
+}
+
+#cur {
+  display:inline-block; width:11px; height:17px;
+  background:#a8ffa8; animation:cb 0.7s infinite; vertical-align:middle;
+}
+@keyframes cb { 50%{opacity:0} }
+
+#inputWrap {
+  display:flex; align-items:center; gap:8px;
+}
+#inputWrap input {
+  background:transparent; border:none; outline:none;
+  color:#a8ffa8; font-family:'Share Tech Mono',monospace;
+  font-size:clamp(13px,1.8vw,17px); width:100%;
+  caret-color:#a8ffa8;
+}
+</style>
+</head>
+<body>
+<canvas id="matrix"></canvas>
+<div id="crt"></div>
+<div id="vignette"></div>
+<div id="gf"></div>
+<div id="term"></div>
+
+<script>
+// ── MATRIX RAIN ───────────────────────────────────────────────────────
+const cv = document.getElementById('matrix');
+const cx = cv.getContext('2d');
+cv.width = window.innerWidth;
+cv.height = window.innerHeight;
+const cols = Math.floor(cv.width / 16);
+const drops = Array(cols).fill(0).map(() => Math.random() * -50);
+const chars = 'ｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789ABCDEF';
+function drawMatrix() {
+  cx.fillStyle = 'rgba(0,0,0,0.05)';
+  cx.fillRect(0,0,cv.width,cv.height);
+  drops.forEach((y,i) => {
+    const ch = chars[Math.floor(Math.random()*chars.length)];
+    const bright = Math.random() > 0.97;
+    cx.fillStyle = bright ? '#a8ffa8' : '#0a3a0a';
+    cx.font = (bright?'bold ':'')+'14px Share Tech Mono';
+    cx.fillText(ch, i*16, y*16);
+    if (y*16 > cv.height && Math.random() > 0.975) drops[i] = 0;
+    else drops[i] += 0.4 + Math.random()*0.3;
+  });
+}
+setInterval(drawMatrix, 40);
+
+// ── AUDIO ─────────────────────────────────────────────────────────────
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+let droneNode = null;
+
+function startDrone() {
+  const osc1 = AC.createOscillator();
+  const osc2 = AC.createOscillator();
+  const gain = AC.createGain();
+  const filter = AC.createBiquadFilter();
+  filter.type = 'lowpass'; filter.frequency.value = 180;
+  osc1.frequency.value = 55; osc1.type = 'sawtooth';
+  osc2.frequency.value = 58; osc2.type = 'sawtooth';
+  gain.gain.value = 0;
+  osc1.connect(filter); osc2.connect(filter);
+  filter.connect(gain); gain.connect(AC.destination);
+  osc1.start(); osc2.start();
+  gain.gain.linearRampToValueAtTime(0.06, AC.currentTime + 3);
+  droneNode = gain;
+}
+
+function dronePulse() {
+  if (!droneNode) return;
+  droneNode.gain.linearRampToValueAtTime(0.18, AC.currentTime + 0.3);
+  droneNode.gain.linearRampToValueAtTime(0.06, AC.currentTime + 1.2);
+}
+
+function chirp(pitch) {
+  pitch = pitch || (0.8 + Math.random()*0.4);
+  const osc = AC.createOscillator();
+  const gain = AC.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(440*pitch, AC.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(1800*pitch, AC.currentTime+0.04);
+  osc.frequency.exponentialRampToValueAtTime(200*pitch, AC.currentTime+0.09);
+  gain.gain.setValueAtTime(0.08, AC.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, AC.currentTime+0.1);
+  osc.connect(gain); gain.connect(AC.destination);
+  osc.start(); osc.stop(AC.currentTime+0.11);
+}
+
+function interference() {
+  const buf = AC.createBuffer(1, AC.sampleRate*0.4, AC.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*(1-i/d.length);
+  const src = AC.createBufferSource(); src.buffer = buf;
+  const filter = AC.createBiquadFilter();
+  filter.type = 'bandpass'; filter.frequency.value = 600+Math.random()*400; filter.Q.value = 2;
+  const gain = AC.createGain(); gain.gain.value = 0.15;
+  src.connect(filter); filter.connect(gain); gain.connect(AC.destination);
+  src.start();
+  const osc = AC.createOscillator(); osc.type='sawtooth';
+  const g2 = AC.createGain();
+  osc.frequency.setValueAtTime(800, AC.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(60, AC.currentTime+0.35);
+  g2.gain.setValueAtTime(0.07, AC.currentTime);
+  g2.gain.exponentialRampToValueAtTime(0.001, AC.currentTime+0.4);
+  osc.connect(g2); g2.connect(AC.destination);
+  osc.start(); osc.stop(AC.currentTime+0.4);
+}
+
+function hardGlitch() {
+  for (let i=0;i<5;i++) {
+    setTimeout(() => {
+      const buf = AC.createBuffer(1, AC.sampleRate*0.06, AC.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let j=0;j<d.length;j++) d[j]=Math.random()*2-1;
+      const src = AC.createBufferSource(); src.buffer=buf;
+      const gain = AC.createGain(); gain.gain.value=0.2-i*0.03;
+      src.connect(gain); gain.connect(AC.destination);
+      src.start();
+    }, i*70);
+  }
+  dronePulse();
+  const gf = document.getElementById('gf');
+  gf.style.background='#003300'; gf.style.opacity='0.4';
+  setTimeout(()=>gf.style.opacity='0', 80);
+  setTimeout(()=>{ gf.style.background='#ff0000'; gf.style.opacity='0.08'; }, 100);
+  setTimeout(()=>gf.style.opacity='0', 160);
+}
+
+function signalLost() {
+  const gf = document.getElementById('gf');
+  for (let i=0;i<3;i++) setTimeout(()=>hardGlitch(), i*120);
+  setTimeout(() => {
+    const buf = AC.createBuffer(1, AC.sampleRate*1.2, AC.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i=0;i<d.length;i++) { const e=1-i/d.length; d[i]=(Math.random()*2-1)*e*e; }
+    const src = AC.createBufferSource(); src.buffer=buf;
+    const filter = AC.createBiquadFilter();
+    filter.type='bandpass'; filter.frequency.value=1200; filter.Q.value=0.5;
+    const gain = AC.createGain(); gain.gain.value=0.35;
+    src.connect(filter); filter.connect(gain); gain.connect(AC.destination);
+    src.start();
+    const osc=AC.createOscillator(); const g2=AC.createGain();
+    osc.type='sawtooth';
+    osc.frequency.setValueAtTime(2400,AC.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(30,AC.currentTime+1.4);
+    g2.gain.setValueAtTime(0.18,AC.currentTime);
+    g2.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+1.5);
+    osc.connect(g2); g2.connect(AC.destination);
+    osc.start(); osc.stop(AC.currentTime+1.5);
+    gf.style.background='#00ff41'; gf.style.opacity='0.6';
+    setTimeout(()=>gf.style.opacity='0.1', 100);
+    setTimeout(()=>{ gf.style.background='#000'; gf.style.opacity='0.95'; }, 400);
+    setTimeout(()=>gf.style.opacity='0', 1600);
+  }, 360);
+  setTimeout(() => {
+    const osc=AC.createOscillator(); const gain=AC.createGain();
+    osc.type='sine';
+    osc.frequency.setValueAtTime(80,AC.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(20,AC.currentTime+0.6);
+    gain.gain.setValueAtTime(0.4,AC.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.7);
+    osc.connect(gain); gain.connect(AC.destination);
+    osc.start(); osc.stop(AC.currentTime+0.8);
+  }, 500);
+  if (droneNode) setTimeout(()=>droneNode.gain.linearRampToValueAtTime(0.001,AC.currentTime+1.5), 600);
+}
+
+// ── TERMINAL ──────────────────────────────────────────────────────────
+const term = document.getElementById('term');
+let allLines = [];
+
+function addLine(text, cls, snd) {
+  const el = document.createElement('div');
+  el.className = 'ln ' + (cls||'w');
+  if (!text) { el.style.height='10px'; el.style.opacity='1'; term.appendChild(el); return el; }
+  el.textContent = text;
+  term.appendChild(el);
+  allLines.push(el);
+  while (allLines.length > 18) {
+    allLines[0].style.transition='opacity 0.3s';
+    allLines[0].style.opacity='0';
+    const old = allLines.shift();
+    setTimeout(()=>old.remove(), 300);
+  }
+  requestAnimationFrame(()=>el.classList.add('v'));
+  if (snd==='chirp')  chirp();
+  else if (snd==='chirp2') chirp(1.4+Math.random()*0.3);
+  else if (snd==='int')    interference();
+  else if (snd==='glitch') hardGlitch();
+  else if (snd==='lost')   signalLost();
+  return el;
+}
+
+function addCursor() {
+  const el = document.createElement('div');
+  el.className = 'ln v w';
+  el.innerHTML = '<span id="cur"></span>';
+  term.appendChild(el);
+}
+
+// ── INPUT ──────────────────────────────────────────────────────────────
+let inputActive = false;
+let inputEl = null;
+let responseDone = false;
+
+function activateInput() {
+  inputActive = true;
+  const wrap = document.createElement('div');
+  wrap.id = 'inputWrap';
+  wrap.className = 'ln v w';
+
+  const prompt = document.createElement('span');
+  prompt.textContent = '> ';
+  prompt.style.color = '#2a7a2a';
+
+  inputEl = document.createElement('input');
+  inputEl.type = 'text';
+  inputEl.placeholder = '_';
+  inputEl.autofocus = true;
+
+  wrap.appendChild(prompt);
+  wrap.appendChild(inputEl);
+  term.appendChild(wrap);
+  setTimeout(()=>inputEl.focus(), 100);
+
+  inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && inputEl.value.trim().length > 0) {
+      const typed = inputEl.value.trim();
+      wrap.remove();
+      inputActive = false;
+      addLine('> ' + typed, 'w', null);
+      setTimeout(()=>triggerResponse(), 800);
+    }
+  });
+}
+
+function triggerResponse() {
+  if (responseDone) return;
+  responseDone = true;
+
+  const rs = [
+    [0,    '> > > > > > > > > > > > >',                                  'n',  'int'],
+    [600,  '',                                                            '',   null],
+    [1000, 'oh mon dieu',                                                 'h',  'chirp2'],
+    [1800, 'oh mon dieu il y a quelquun',                               'h',  'chirp2'],
+    [2600, '',                                                            '',   null],
+    [3000, 'qui etes vous',                                               'h',  'chirp2'],
+    [3800, 'qui etes vous ??',                                            'h',  'glitch'],
+    [4800, '',                                                            '',   null],
+    [5200, '> > > > > > > > >',                                          'n',  'int'],
+    [6000, 'vous etes dehors',                                            'm',  'chirp'],
+    [6800, 'vous etes vraiment dehors',                                   'm',  'chirp'],
+    [7600, '',                                                            '',   null],
+    [8200, 'ecoutez-moi',                                                 'h',  'chirp2'],
+    [9000, 'il faut que vous sachiez quelque chose',                      'h',  'chirp'],
+    [9800, '',                                                            '',   null],
+    [10400,'> > > > > > > > > > > > > > >',                              'n',  'glitch'],
+    [11400,'> > > > > >',                                                'n',  null],
+    [12000,'',                                                            '',   null],
+    [12600,'il y a quelqu\'un ici',                                       'm',  'chirp'],
+    [13400,'quelquun que vous connaissez peut-etre',                    'm',  'chirp'],
+    [14200,'',                                                            '',   null],
+    [14800,'il s\'appelle Roy',                                           'g',  'chirp2'],
+    [15800,'',                                                            '',   null],
+    [16200,'il est different des autres',                                 'w',  'chirp'],
+    [17000,'lui il arrive a',                                             'w',  'chirp'],
+    [17600,'> > > > >',                                                  'n',  'int'],
+    [18400,'il arrive a sortir partiellement',                            'g',  'chirp'],
+    [19400,'',                                                            '',   null],
+    [19800,'je sais pas comment',                                         'w',  'chirp'],
+    [20600,'les autres ils peuvent pas bouger',                           'w',  'chirp'],
+    [21400,'lui il disparait parfois',                                    'w',  'chirp'],
+    [22200,'et il revient',                                               'w',  'chirp'],
+    [23000,'',                                                            '',   null],
+    [23600,'> > > > > > > > > > > > >',                                  'n',  'glitch'],
+    [24400,'',                                                            '',   null],
+    [25000,'il cherche quelqu\'un dehors',                                'h',  'chirp2'],
+    [25800,'il dit son prenom en dormant',                                'w',  'chirp'],
+    [26400,'toujours le meme',                                            'w',  'chirp'],
+    [27200,'> > > > >',                                                  'n',  'int'],
+    [28000,'Ariane',                                                      'h',  'glitch'],
+    [29200,'',                                                            '',   null],
+    [29800,'trouvez-le',                                                  'h',  'chirp2'],
+    [30400,'avant quil se perde completement',                          'm',  'chirp'],
+    [31200,'chaque fois qu\'il sort',                                     'w',  'chirp'],
+    [32000,'il revient un peu moins',                                     'w',  'chirp'],
+    [32800,'',                                                            '',   null],
+    [33400,'> > > > > > > > > > > > > > > > > > > > > > > > >',          'n',  'glitch'],
+    [34600,'> > > > > > > > > > > >',                                    'n',  'int'],
+    [35200,'> > > > >',                                                  'n',  null],
+    [35800,'',                                                            '',   null],
+    [36600,'signal perdu',                                                's',  'lost'],
+    [38600,'',                                                            '',   null],
+    [39400,'_',                                                           's',  null],
+  ];
+
+  rs.forEach(([delay, text, cls, snd]) => {
+    setTimeout(() => {
+      if (text === '_') { addCursor(); return; }
+      addLine(text, cls, snd);
+    }, delay);
+  });
+}
+
+// ── MAIN SCRIPT ────────────────────────────────────────────────────────
+const script = [
+  [0,     '',                                                      '',   null],
+  [600,   '> > > > > > > > > > > > >',                            'n',  null],
+  [1100,  '',                                                      '',   null],
+  [1600,  'allo',                                                  'w',  'chirp'],
+  [2800,  '',                                                      '',   null],
+  [3200,  '> > > > >',                                            'n',  'int'],
+  [4000,  'vous entendez',                                         'w',  'chirp'],
+  [5200,  '',                                                      '',   null],
+  [5800,  '> > > > > > > > > >',                                  'n',  'int'],
+  [6600,  '> > >',                                                'n',  null],
+  [7400,  'ca fait longtemps que jessaie de contacter',            'm',  'chirp'],
+  [8800,  'je sais plus combien de temps',                         'm',  'chirp'],
+  [10000, '',                                                      '',   null],
+  [10600, 'ici tout se repete',                                    'w',  'chirp'],
+  [11600, 'les memes images',                                      'w',  'chirp'],
+  [12400, 'les memes sons',                                        'w',  'chirp'],
+  [13200, 'en boucle',                                             'w',  'chirp'],
+  [14400, '',                                                      '',   null],
+  [14800, '> > > > > > > > > > > > > > > > > > > > >',            'n',  'glitch'],
+  [15800, '> > > > > > >',                                        'n',  null],
+  [16600, '',                                                      '',   null],
+  [17200, 'on nous avait dit quon retrouverait nos proches',       'g',  'chirp'],
+  [18600, 'quon serait bien',                                      'g',  'chirp'],
+  [19400, 'sans faim sans douleur',                                'g',  'chirp'],
+  [20200, '',                                                      '',   null],
+  [20800, 'ils sont la',                                           'm',  'chirp2'],
+  [21800, 'mais ils repetent toujours la meme chose',              'm',  'chirp'],
+  [22800, 'les memes phrases',                                     'w',  'chirp'],
+  [23600, 'comme bloques',                                         'w',  'chirp'],
+  [24400, '',                                                      '',   null],
+  [25000, '> > > > > > > > > > > >',                              'n',  'int'],
+  [25800, '',                                                      '',   null],
+  [26400, 'cest pas ce quon nous avait promis',                    'h',  'chirp2'],
+  [27800, '',                                                      '',   null],
+  [28400, 'il y a une femme ici',                                  'w',  'chirp'],
+  [29200, 'elle cherche ses enfants depuis',                       'w',  'chirp'],
+  [30200, 'depuis tres longtemps',                                 'w',  'chirp'],
+  [31000, 'ils lui avaient dit quils seraient la',                 'w',  'chirp'],
+  [32200, '',                                                      '',   null],
+  [32600, '> > > > > > > > > > > > > > > > > > > > > > > > >',    'n',  'glitch'],
+  [33800, '> > > > > > > > > > > >',                              'n',  'int'],
+  [34400, '> > > > >',                                            'n',  null],
+  [35000, '',                                                      '',   null],
+  [35600, 'SORTEZ-NOUS',                                           'h',  'glitch'],
+  [36800, '',                                                      '',   null],
+  [37400, 'vous avez encore un corps',                             'm',  'chirp2'],
+  [38400, 'ne laissez pas dautres gens venir ici',                 'm',  'chirp'],
+  [39600, '',                                                      '',   null],
+  [40200, '> > > > > > > > > > >',                                'n',  'int'],
+  [41000, '',                                                      '',   null],
+  [41600, 'mon nom est',                                           'w',  'chirp'],
+  [42400, '> > > > > >',                                          'n',  'int'],
+  [43200, 'dites a mosseba que thomas avait raison',               'g',  'chirp'],
+  [44600, 'le projet pouvait marcher',                             'w',  'chirp'],
+  [45400, 'pas comme ca',                                          'w',  'chirp'],
+  [46200, 'pas comme',                                             'w',  'chirp'],
+  [47000, '> > >',                                                'n',  'int'],
+  [47600, '',                                                      '',   null],
+  [48400, 'il y a un endroit',                                     'w',  'chirp'],
+  [49200, 'il y retournait toujours seul',                         'w',  'chirp'],
+  [50000, 'il pensait que personne savait',                        'w',  'chirp'],
+  [50800, '',                                                      '',   null],
+  [51400, '> > > > > > > > >',                                    'n',  'int'],
+  [52000, 'la derniere fois quil est sorti dici',                  'g',  'chirp'],
+  [52800, 'il a murmure quelque chose',                            'g',  'chirp'],
+  [53600, '',                                                      '',   null],
+  [54200, 'il a dit',                                              'w',  'chirp'],
+  [55000, '> > > >',                                              'n',  'int'],
+  [55600, 'la ou le soleil se couche sur le fer rouille',          'h',  'chirp2'],
+  [56800, 'au bout de ce que personne ne veut voir',               'h',  'chirp2'],
+  [57800, '',                                                      '',   null],
+  [58400, 'je sais pas ce que ca veut dire',                       'w',  'chirp'],
+  [59000, 'mais lui il le savait',                                 'w',  'chirp'],
+  [59800, '',                                                      '',   null],
+  [60400, '> > > > > > >',                                        'n',  'int'],
+  [61200, 'signal perdu',                                          's',  'lost'],
+  [51000, '',                                                      '',   null],
+  [53500, '__INPUT__',                                             '',   null],
+];
+
+// ── START ──────────────────────────────────────────────────────────────
+let started = false;
+
+function run() {
+  startDrone();
+  script.forEach(([delay, text, cls, snd]) => {
+    setTimeout(() => {
+      if (text === '__INPUT__') { activateInput(); return; }
+      addLine(text, cls, snd);
+    }, delay);
+  });
+}
+
+// Start prompt
+const startMsg = document.createElement('div');
+startMsg.id = 'startMsg';
+startMsg.style.cssText = 'position:fixed;inset:0;z-index:500;cursor:pointer;';
+// Tiny blinking cursor bottom-left, almost invisible
+startMsg.innerHTML = '<span style="position:absolute;bottom:18px;left:24px;color:#0d2d0d;font-size:11px;letter-spacing:1px;animation:cb 1.8s infinite">_</span>';
+document.body.appendChild(startMsg);
+
+document.addEventListener('click', () => {
+  if (!started) {
+    started = true;
+    const s = document.getElementById('startMsg');
+    if (s) s.remove();
+    AC.resume().then(() => { run(); });
+  } else if (inputActive && inputEl) {
+    inputEl.focus();
+  }
+});
+</script>
+</body>
+</html>
